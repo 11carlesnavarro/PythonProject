@@ -1,5 +1,8 @@
 from Bio.PDB import *
 from Bio import pairwise2
+from Bio.SubsMat import MatrixInfo as matlist # Used for applying subtitution matrix in sequence comparison
+from Bio.pairwise2 import format_alignment # DEBUGING Used for printing the alignment. DEBUGING purposes
+from math import log # For use in defining the gap function for sequence comparison parameters
 import sys
 import os
 import argparse
@@ -26,8 +29,6 @@ args = parser.parse_args()
 
 ###########################################################################################################################
 
-#PROPIO#########################################################
-
 # En la investigación vi que exiten por lo menos tres instancias de interés para analizar los pdb:
 # Structure, Chain y sequence. Structure está representada por la totalidad del pdb file, chain se
 # refiere al nombre de la cadena, en los binary interaction files habrá solo dos cadenas. Sequence 
@@ -50,65 +51,55 @@ def get_sequence(structure):
         seq = pp.get_sequence()
 
     return(seq)
+  
+ def gap_opening_function(x, y): # x is gap position in seq, y is gap length
+    """ This function handles the penalties of gap openings and extensions in
+    compare_seqsBLOSUM method. change the values on the return funtions for changing
+    the penalty values. """
+
+    if y == 0: # No gap
+        return 0
+    elif y == 1: #Gap open penalty
+        return -2
+    return - (2 + y/4.0 + log(y)/2.0)
+
+def gap_extension_function(x, y): # x is gap position in seq, y is gap length
+    """ This function handles the penalties of gap openings and extensions in
+    compare_seqsBLOSUM method. change the values on the return funtions for changing
+    the penalty values. """
+
+    if y == 0: # No gap
+        return 0
+    elif y == 1: #Gap open penalty
+        return -2
+    return - (2 + y/4.0 + log(y)/2.0)
 
 # En ésta función se hace un alineamiento global. después se calcula el sequence simlarity (SS)
-# con la fórmula   SS = score/len(minSeq)   en donde score es el valor del score obtenido en la 
-# alineación pareada. OJO !!! - éste cálculo es erroneo, se está construyendo esta función, estoy
-# investigando la fórmula necesarioa para calcular el SS de forma correcta. Se tiene que penalizar
-# de forma diferente el cambio de aminoácidos según las propiedades fisicoquímicas de los camvbios de
-# los residuos
-def compare_seqs(seq1, seq2):
-    """Returns the percentage sequence similarity between
-    two given sequences. """
+# con la fórmula   SS = score/len(maxSeq)   en donde score es el valor del score obtenido en la 
+# alineación pareada. se utiliza la matriz de substitución BLOSUM50, pero puede ser elegida alguna
+# otra. Los penalties de gap opening y gap extension pueden ser cambiados en las funciones de:
+# gap_opening_function y gap_extension_function
 
-    alignment = pairwise2.align.globalxx(seq1, seq2)
+# OJO!!, aún falta confirmar si aunque tengamos matriz de substitución y penalties, es pertinente
+# dividir el score entre la secuencia de máxima longitud para obtener el porcentaje de similitud.
+def compare_seqsBLOSUM50(seq1, seq2):
+    """This method returns the score of a pairwise sequence comparison. Expects
+    two sequences. The matrix substitution is blosum50, and penalizes gap openings
+    and extensions with values set in gap_function. default penalties are :
+
+    gap opening: -2 # I am exploring which penalties are best for gap opening and extension.
+    gap extension: -2 """
+
+    matrix = matlist.blosum50
+    alignment = pairwise2.align.globaldc(seq1, seq2, matrix, gap_opening_function, gap_extension_function)
     score = alignment[0][2]
-    seq_sim = score/min(len(seq1), len(seq2))
+    seq_sim = score/max(len(seq1), len(seq2))
 
-    return(seq_sim)
-
-
-#TESTING#################################################
-######################
-## éstas son funciones en construcción, no funcionan aún, y están siendo exploradas. Las funciones de 
-## éstas vienen del paquete Bio.pdb
-
-# def get_name_structure(pdb_files):
-#         """Parses the names of the input files and returns the name of the files without .pdb extension"""
-#         p = re.compile('(.*).pdb') #using regular expression, impor re needed
-#         m = p.match(pdb_files)
-#
-#         return m.group(1)
-#
-# def get_pdb_info(pdb_files):
-#     p = PDBParser(PERMISSIVE=1, QUIET=True)
-#     error_files = []
-#     for f in pdb_files:
-#         try:
-#             str_id = get_name_structure(f)
-#             print(str_id)
-#             str = p.get_structure(str_id,f)
-#         except:
-#             error_files.append(f)
-#             continue
-#
-#         chains = []
-#         sequences = []
-#         chains_to_remove = []
-#
-#         for chain in str.get_chains():
-#             seq = get_sequence(chain)
-#             if seq is None:
-#                 chains_to_remove.append(chain.id)
-#
-#             else:
-#                 sequences.append(seq)
-#                 chains.append(chain)
-######################TESTING###############################3
+    return seq_sim
 
 if  __name__=="__main__":
 
-    # corriendo las dos funciones. ambas funcionan, se extraen las secuencias de las dos cadenas 
+    # corriendo las funciones. corren sin error, pero con un warning que estoy trabajando. se extraen las secuencias de las dos cadenas 
     # (vienen de archivos independientes, hay que desarrollar la forma de hacerlo desde un solo archivo binario)
     # tras extraer las secuencias, se hace el alineamiento pareado y se ejecuta la formula. Estoy trabajando 
     # en obtener la fórmula correcta.
