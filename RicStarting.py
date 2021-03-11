@@ -8,61 +8,74 @@ import os
 import argparse
 import re
 
-arser = argparse.ArgumentParser(description = """This program analyze pdb binary chain interactions provided, calculate and reconstructs the polipeptide complex
+
+
+parser = argparse.ArgumentParser(description = """This program analyzes pdb binary chain interactions provided, calculate and reconstructs the polipeptide complex
 represented by the provided files.
 """)
 
 parser.add_argument('-i', '--input',
-                                        dest = "infile",
+                                        dest = "inPath",
                                         action = "store",
-                                        default = os.getcwd(), #current input default is complete current directory, we need to discuss what default will be set.
-                                        help = """You need to provide the path to the directory where the binary interaction pdb files are stored,
-                                                  they will be all analized""") # I think we could use default = None, and guide the user to provide only a path. Discussion.
+                                        default = os.getcwd(), # Default is current directory
+                                        help = """Provide the complete path to the pdb files you
+                                                  want to analyze after -i flag. If no path is provided,
+                                                  the program will assume that current directory is
+                                                  going to be searched for pdb files to analize.""")
+
 
 parser.add_argument('-o', '--output',
                                         dest = "outfile",
                                         action = "store",
                                         default = None,
                                         help = """The output file will be named after the name provided after this flag.
-                                                This option is mandatory, if no output filename is provided, no analysis
-                                                will be run and this message will be displayed. """)
+                                                  This option is mandatory, if no output filename is provided, no analysis
+                                                  will be run and this message will be displayed. """)
 
 parser.add_argument('-v', '--verbose',
                                         dest = "verbose",
                                         action = "store_true",
                                         default = False,
                                         help = """This option prints the execution of the program as it is the actions are being.
-                                                performed. It is used without options as it activates the verbose mode on.
-                                                It is adviseable to run the analysis with this option in case any exception is raised.""")
+                                                  performed. It is used without options as it activates the verbose mode on.
+                                                  It is adviseable to run the analysis with this option in case any exception is raised.""")
 
 args = parser.parse_args()
 
 ###########################################################################################################################
 
-# Por ahora la ejecución del programa funciona bien, pero toma solo éstas dos secuencias. Debe cambiarse para operar sobre 
-# todos los archivos del directorio y desde los archivos pareados, analizándolos sin separar.
-structure1 = PDBParser().get_structure('test', "chainA.pdb")
-structure2 = PDBParser().get_structure('test', "chainC.pdb")
 
-# regresa la secuencia de un archivo pdb. Debe trabajar sobre un solo archivo pareado.
-def get_sequence(structure):
-    """returns the sequence of the structure instance passed
-       through the method. It uses CaPPBuilder from Bio.pdb module
-       so it identifies each alpha Carbon of the peptide chain to
-       build the sequence"""
+def get_files(input):
+    """ This method reads the directory that is provided in the command line argument.
+        Default directory to read is the current directory. It searches for files with
+        .pdb extension and returns them.
+    """
 
-    ppb = CaPPBuilder()
-    for pp in ppb.build_peptides(structure):
-        seq = pp.get_sequence()
+    path = input
+    extension = re.compile('.pdb$')
 
-    return(seq)
+    pdb_files = [file for file in os.listdir(path) if extension.search(file) is not None]
+    os.chdir(path)
 
-# Funciona bien, debe recibir dos secuencias separadas. El cálculo de la identidad de secuencias es correcto.
+    return pdb_files
+
+def get_file_prefix(pdb_files):
+        """Tests for match of regex containing .pdb extension, trims it and returns
+           the file prefix.
+        """
+
+        p = re.compile('(.*).pdb$')
+        m = p.search(pdb_files)
+
+        return m.group(1)
+
+
 def compare_seqs(seq1, seq2):
     """This method aligns two given sequences, calculates percentage identity and
        tests if this identity is equal or higher than 95% or lower. If the given
        sequences show 95% identity or more, method returns True. otherwise it returns
-       False."""
+       False.
+    """
     # value 1 is for counting identical matches. Therefore the alignment score is
     # equal to counting identical matches. percentage identity is then calculated
     # as the ratio between the score and the length of the alignment. this percentage
@@ -83,10 +96,35 @@ def compare_seqs(seq1, seq2):
         return False
 
 
+def get_structures(pdb_files):
+    """This method parses the providad pdb files and extracts chains, and sequences trom them.
+       The sequences are extracting using the alpha carbons provided in the pdb file. Input is
+       a list of pdb files.
+    """
+    ppb = CaPPBuilder()
+    parser = PDBParser(QUIET=True)
+
+    for file in pdb_files:
+
+        id = get_file_prefix(file)
+        structure = parser.get_structure(id, file)
+        # print(structure)
+        sequences = []
+        chains = []
+
+        for chain in structure.get_chains():
+
+            chains.append(chain)
+
+        for pp in ppb.build_peptides(structure):
+
+            seq = pp.get_sequence()
+            sequences.append(seq)
+
+        print(sequences) #debugging purposes
+
+
 if __name__=="__main__":
 
-    seq1 = get_sequence(structure1)
-    seq2 = get_sequence(structure2)
-
-    compare = compare_seqs(seq1, seq2)
-    print(compare)
+    files = get_files(args.inPath)
+    print(get_structures(files))
