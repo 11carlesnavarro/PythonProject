@@ -9,6 +9,7 @@ import argparse
 import re
 
 
+###################################################################################################################################################
 
 parser = argparse.ArgumentParser(description = """This program analyzes pdb binary chain interactions provided, calculate and reconstructs the polipeptide complex
 represented by the provided files.
@@ -42,7 +43,7 @@ parser.add_argument('-v', '--verbose',
 
 args = parser.parse_args()
 
-###########################################################################################################################
+###################################################################################################################################################
 
 
 def get_files(input):
