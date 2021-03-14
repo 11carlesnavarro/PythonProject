@@ -3,6 +3,8 @@ import sys
 import os
 import argparse
 import re
+import shutil
+
 
 parser = argparse.ArgumentParser(description = """This program analyzes pdb binary chain interactions provided, 
 calculate and reconstructs the polipeptide complex represented by the provided files. """)
@@ -33,6 +35,15 @@ parser.add_argument('-v', '--verbose',
                                                   performed. It is used without options as it activates the verbose mode on.
                                                   It is adviseable to run the analysis with this option in case any exception is raised.""")
 
+parser.add_argument('-f', '--force',
+                                        dest = "force",
+                                        action = "store_true",
+                                        default = False,
+                                        help = """If this option is False and the output directory already exists before the application is
+                                                   executed, exit the program execution and warn the user that the directory already exists. 
+                                                   If it is True, then the program can continue running and overwrite all the contents of the
+                                                   output directory""")
+
 args = parser.parse_args()
 
 ######### IncorrectInputFile Subclass ###########
@@ -51,6 +62,8 @@ class IncorrectInputFile(AttributeError):
 
 
 ####### Functions ########
+
+# READ FILES
 
 def get_files(input):
     """ 
@@ -79,9 +92,11 @@ def get_files(input):
             raise IncorrectInputFile(f)
 
     # Change dir to the dir of the files / input dir
-    os.chdir(path)
+    #os.chdir(path)
 
     return pdb_files
+
+# GET THE FILE PREFIX 
 
 def get_file_prefix(pdb_files):
         """
@@ -94,6 +109,42 @@ def get_file_prefix(pdb_files):
 
         return m.group(1)
 
+# OUTPUT DIRECTORY 
+
+def save_output():
+    """
+        If the output directory does not exists, create it. 
+    """
+
+    # Verbose
+    if args.verbose:
+        print("Writing the output...")
+
+    subfolder_names = ["Structures", "Analysis"]
+
+    # If the argument force is not selected create the output directory if it does not exists 
+
+    if not args.force:
+        #if not os.path.exists('FinalComplex'):
+        try:
+            for subfolder_name in subfolder_names:
+                os.makedirs(os.path.join('FinalComplex', subfolder_name))
+        except OSError as err:
+            raise err
+    
+    # If the argument force is selected create the output directory if it does not exists and, if exists, override it
+    elif args.force:
+        if not os.path.exists('FinalComplex'):
+            for subfolder_name in subfolder_names:
+                os.makedirs(os.path.join('FinalComplex', subfolder_name))
+        else:
+            #Remove the directory
+            shutil.rmtree('FinalComplex')
+            for subfolder_name in subfolder_names:
+                os.makedirs(os.path.join('FinalComplex', subfolder_name))
+
+
+
 if __name__ == "__main__":
 
 
@@ -102,3 +153,4 @@ if __name__ == "__main__":
     print(get_file_prefix(files[0]))
     
     #print(os.path.basename(args.inPath))
+    save_output()
