@@ -1,106 +1,21 @@
 
+import arguments as arguments
 import sys
 import os
 import argparse
 import re
 import shutil
+from Bio.PDB import *
+from Bio import pairwise2
+# from Bio.SubsMat import MatrixInfo as matlist # Used for applying subtitution matrix in sequence comparison
+from Bio.pairwise2 import format_alignment # DEBUGING Used for printing the alignment. DEBUGING purposes
 
 
-parser = argparse.ArgumentParser(description = """This program analyzes pdb binary chain interactions provided, 
-calculate and reconstructs the polipeptide complex represented by the provided files. """)
 
-parser.add_argument('-i', '--input',
-                                        dest = "inPath",
-                                        action = "store",
-                                        default = os.getcwd(), # Default is current directory
-                                        help = """Provide the complete path to the pdb files you
-                                                  want to analyze after -i flag. If no path is provided,
-                                                  the program will assume that current directory is
-                                                  going to be searched for pdb files to analize.""")
-
-
-parser.add_argument('-o', '--output',
-                                        dest = "outfile",
-                                        action = "store",
-                                        default = None,
-                                        help = """The output file will be named after the name provided after this flag.
-                                                  This option is mandatory, if no output filename is provided, no analysis
-                                                  will be run and this message will be displayed. """)
-
-parser.add_argument('-v', '--verbose',
-                                        dest = "verbose",
-                                        action = "store_true",
-                                        default = False,
-                                        help = """This option prints the execution of the program as it is the actions are being.
-                                                  performed. It is used without options as it activates the verbose mode on.
-                                                  It is adviseable to run the analysis with this option in case any exception is raised.""")
-
-parser.add_argument('-f', '--force',
-                                        dest = "force",
-                                        action = "store_true",
-                                        default = False,
-                                        help = """If this option is False and the output directory already exists before the application is
-                                                   executed, exit the program execution and warn the user that the directory already exists. 
-                                                   If it is True, then the program can continue running and overwrite all the contents of the
-                                                   output directory""")
-
-args = parser.parse_args()
-
-######### IncorrectInputFile Subclass ###########
-
-class IncorrectInputFile(AttributeError):
-    """ Exception when a letter that not belongs to the sequence alphabet is found"""
-    __module__ = 'builtins'
-
-    def __init__(self, pdbfile):
-        self.pdbfile = pdbfile
-    
-    def __str__(self):
-        """ Raise an exception if the file is not in the correct format"""
-
-        return "The file %s is not appropiate" %(self.pdbfile)
-
-
-####### Functions ########
-
-# READ FILES
-
-def get_files(input):
-    """ 
-        This method reads the directory that is provided in the command line argument.
-        Default directory to read is the current directory. It searches for files with
-        .pdb extension and returns them.
-
-    """
-    # Print the execution of the program if -v is set
-    if args.verbose:
-        print("Reading pdb files...")
-
-    # Reading pdb files and saving into a list
-
-    path = input
-
-    # Regular expression to check if the input file name is correct
-    input_file = re.compile(r"^(?P<name>[a-zA-Z0-9]+)(\_)(?P<chain1>[a-zA-Z])(\_)(?P<chain2>[a-zA-Z])(.pdb$)")
-
-    # List of pdb files
-    pdb_files = []
-    for f in os.listdir(path):
-        if input_file.match(f):
-            pdb_files.append(f)
-        else:
-            raise IncorrectInputFile(f)
-
-    # Change dir to the dir of the files / input dir
-    #os.chdir(path)
-
-    return pdb_files
-
-# GET THE FILE PREFIX 
+########## GET FILE PREFIXES ###########
 
 def get_file_prefix(pdb_files):
-        """
-           Tests for match of regex containing .pdb extension, trims it and returns
+        """Tests for match of regex containing .pdb extension, trims it and returns
            the file prefix.
         """
 
@@ -109,48 +24,132 @@ def get_file_prefix(pdb_files):
 
         return m.group(1)
 
-# OUTPUT DIRECTORY 
 
-def save_output():
+########### COMPARE SEQUENCES ###########
+
+def compare_seqs(seq1, seq2):
     """
-        If the output directory does not exists, create it. 
+       This method aligns two given sequences, calculates percentage identity and
+       tests if this identity is equal or higher than 95% or lower. If the given
+       sequences show 95% identity or more, method returns True. otherwise it returns
+       False.
+    """
+    # value 1 is for counting identical matches. Therefore the alignment score is
+    # equal to counting identical matches. percentage identity is then calculated
+    # as the ratio between the score and the length of the alignment. this percentage
+    # identity is the BLAST definition.
+
+    # definition of BLAST percentage identity is taken from:
+    # Heng Li, 2021, at: https://lh3.github.io/2018/11/25/on-the-definition-of-sequence-identity
+    align = pairwise2.align.globalmx(seq1, seq2, 1, 0)
+    algn_len = len(align[0][1])
+    match_score = align[0][2]
+
+    identity = match_score/algn_len
+
+    # Checking for identity, true = homodimer. false = heterodimer
+    if identity >= .95:
+        return True
+    else:
+        return False
+
+
+######### GET THE SEQUENCES OF EACH FILE ###########
+
+def get_structures(pdb_files, path = arguments.args.inPath):
+    """
+       This method parses the provided pdb files and extracts and yields the structures 
+       from them.
     """
 
-    # Verbose
-    if args.verbose:
-        print("Writing the output...")
+    parser = PDBParser(QUIET=True)
 
-    subfolder_names = ["Structures", "Analysis"]
+    # Main directory 
+    main_dir = os.getcwd()
 
-    # If the argument force is not selected create the output directory if it does not exists 
+    # Change dir to the dir of the files / input dir
+    os.chdir(path)
 
-    if not args.force:
-        #if not os.path.exists('FinalComplex'):
-        try:
-            for subfolder_name in subfolder_names:
-                os.makedirs(os.path.join('FinalComplex', subfolder_name))
-        except OSError as err:
-            raise err
+
+    for file in pdb_files:
+
+        id = get_file_prefix(file)
+        yield parser.get_structure(id, file)
+        #print(structure)
+
+        # Set the path again to main
+
+    os.chdir(main_dir)
+
+
+def get_chains_structure(structure):
+        """ 
+        Returns a list of chains given a structure
+
+        """
+        chains = []
+
+        for model in structure:
+            for chain in model:
+                chains.append(chain)
+        return chains
+
+def get_sequences(structure):
+
+    """
+    Returns a list of sequences given a structure
+    """
+
+    ppb = PPBuilder()
+    sequences = []
+
+    for pp in ppb.build_peptides(structure):
+
+        seq = pp.get_sequence()
+        sequences.append(seq)
+
+    return sequences #debugging purposes
     
-    # If the argument force is selected create the output directory if it does not exists and, if exists, override it
-    elif args.force:
-        if not os.path.exists('FinalComplex'):
-            for subfolder_name in subfolder_names:
-                os.makedirs(os.path.join('FinalComplex', subfolder_name))
-        else:
-            #Remove the directory
-            shutil.rmtree('FinalComplex')
-            for subfolder_name in subfolder_names:
-                os.makedirs(os.path.join('FinalComplex', subfolder_name))
+def get_sequences_string(chain):
+    """
+    Given a chain it returns its sequence as string
+
+    """
+
+    ppb = PPBuilder()
+    for pp in ppb.build_peptides(chain):
+        return pp.get_sequence()
 
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
 
 
-    files = get_files(args.inPath)
+    files = arguments.get_files(arguments.args.inPath)
+    files_dir = arguments.args.inPath
+
+
     print(files[0])
     print(get_file_prefix(files[0]))
     
-    #print(os.path.basename(args.inPath))
-    save_output()
+    get_structures(files, files_dir)
+
+    print(arguments.args)   
+    print(os.getcwd())
+
+
+
+    for structure in get_structures(files):
+        chains = get_chains_structure(structure)
+        n = 0
+        for chain in chains:
+            print(chains[n])
+            print(get_sequences_string(chain))
+            n += 1
+
+    for structure in get_structures(files):
+        print(structure)
+        print(get_sequences(structure))
+
+#######################################################################
+
